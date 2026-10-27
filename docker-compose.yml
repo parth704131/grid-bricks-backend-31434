@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wind_procurement
+      POSTGRES_USER: wind
+      POSTGRES_PASSWORD: wind
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wind -d wind_procurement"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://wind:wind@postgres:5432/wind_procurement
+      FRONTEND_ORIGIN: http://localhost:5173
+      DEFAULT_DECISION_TIME: "10:00"
+      MARKET_TIMEZONE: Europe/London
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
