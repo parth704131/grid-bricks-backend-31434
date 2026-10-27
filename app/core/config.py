@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     default_decision_time: str = "10:00"
     market_timezone: str = "Europe/London"
     log_level: str = "INFO"
+    elexon_base_url: str = "https://data.elexon.co.uk/bmrs/api/v1"
 
     @field_validator("default_decision_time")
     @classmethod

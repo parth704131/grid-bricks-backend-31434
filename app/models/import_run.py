@@ -27,7 +27,14 @@ class DataImportRun(Base):
     dataset: Mapped[str] = mapped_column(String(16), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[ImportRunStatus] = mapped_column(Enum(ImportRunStatus, name="import_run_status"), nullable=False)
+    status: Mapped[ImportRunStatus] = mapped_column(
+        Enum(
+            ImportRunStatus,
+            name="import_run_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+    )
     records_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     records_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     records_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
