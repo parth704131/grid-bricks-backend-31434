@@ -3,7 +3,7 @@ import sys
 from datetime import date
 
 from app.clients.elexon import ElexonClient
-from app.core.database import SessionLocal
+from app.core.database import new_session
 from app.services.ingestion import IngestionError, import_actuals, import_forecasts
 
 
@@ -17,7 +17,7 @@ def main() -> int:
     if arguments.delivery_to < arguments.delivery_from:
         parser.error("--delivery-to must not be before --delivery-from")
 
-    session = SessionLocal()
+    session = new_session()
     try:
         with ElexonClient() as client:
             summaries = [
