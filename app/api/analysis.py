@@ -1,16 +1,24 @@
 from collections import defaultdict
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import ApiError
 from app.core.time import MARKET_ZONE, decision_cutoff_for_delivery
-from app.services.analysis import analyse_period, forecast_versions_for_start_time, metrics_for_series
+from app.schemas.analysis import AnalysisResponse, ForecastVersionsResponse
+from app.services.analysis import (
+    analyse_period,
+    forecast_versions_for_start_time,
+    metrics_for_series,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
+DEFAULT_DECISION_TIME = time.fromisoformat(get_settings().default_decision_time)
 
 
 def numeric(value: Decimal | None) -> float | None:
@@ -37,15 +45,15 @@ def daily_summaries(series: list) -> list[dict]:
     return summaries
 
 
-@router.get("/analysis")
+@router.get("/analysis", response_model=AnalysisResponse)
 def analysis(
     response: Response,
-    from_date: date = Query(alias="from"),
-    to_date: date = Query(alias="to"),
-    decision_time: time = Query(default=time(10), alias="decisionTime"),
-    timezone: str = Query(default="Europe/London"),
-    session: Session = Depends(get_session),
-) -> dict:
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    session: Annotated[Session, Depends(get_session)],
+    decision_time: Annotated[time, Query(alias="decisionTime")] = DEFAULT_DECISION_TIME,
+    timezone: Annotated[str, Query()] = "Europe/London",
+) -> AnalysisResponse:
     if from_date > to_date:
         raise ApiError("INVALID_DATE_RANGE", "The start date must not be after the end date.", 422)
     if timezone != "Europe/London":
@@ -57,65 +65,95 @@ def analysis(
         raise ApiError("NO_DATA_AVAILABLE", "No data is available for this request.", 404)
     metrics = metrics_for_series(series)
     matched = [item for item in series if item.status == "matched"]
-    warnings = [] if len(matched) == len(series) else ["Some requested periods have missing actuals or forecasts."]
+    warnings = (
+        []
+        if len(matched) == len(series)
+        else ["Some requested periods have missing actuals or forecasts."]
+    )
     response.headers["Cache-Control"] = "public, s-maxage=3600, stale-while-revalidate=86400"
-    return {
-        "period": {"from": from_date, "to": to_date},
-        "decisionPolicy": {"time": decision_time.strftime("%H:%M"), "timezone": timezone, "daysBeforeDelivery": 1},
-        "summary": {
-            "maeMw": numeric(metrics.mae_mw),
-            "rmseMw": numeric(metrics.rmse_mw),
-            "biasMw": numeric(metrics.bias_mw),
-            "p90AbsoluteErrorMw": numeric(metrics.p90_absolute_error_mw),
-            "positiveErrorMwh": numeric(metrics.positive_error_mwh),
-            "negativeErrorMwh": numeric(metrics.negative_error_mwh),
-        },
-        "coverage": {"expectedPeriods": len(series), "matchedPeriods": len(matched), "percentage": round(100 * len(matched) / len(series), 2)},
-        "daily": daily_summaries(series),
-        "series": [
-            {
-                "startTime": item.start_time,
-                "forecastMw": numeric(item.forecast_mw),
-                "actualMw": numeric(item.actual_mw),
-                "errorMw": numeric(item.forecast_mw - item.actual_mw) if item.status == "matched" else None,
-                "absoluteErrorMw": numeric(abs(item.forecast_mw - item.actual_mw)) if item.status == "matched" else None,
-                "energyErrorMwh": numeric((item.forecast_mw - item.actual_mw) * Decimal("0.5")) if item.status == "matched" else None,
-                "forecastPublishTime": item.forecast_publish_time,
-                "decisionCutoff": item.decision_cutoff,
-                "status": item.status,
-            }
-            for item in series
-        ],
-        "dataAsOf": data_as_of,
-        "warnings": warnings,
-    }
+    return AnalysisResponse.model_validate(
+        {
+            "period": {"from": from_date, "to": to_date},
+            "decisionPolicy": {
+                "time": decision_time.strftime("%H:%M"),
+                "timezone": timezone,
+                "daysBeforeDelivery": 1,
+            },
+            "summary": {
+                "maeMw": numeric(metrics.mae_mw),
+                "rmseMw": numeric(metrics.rmse_mw),
+                "biasMw": numeric(metrics.bias_mw),
+                "p90AbsoluteErrorMw": numeric(metrics.p90_absolute_error_mw),
+                "positiveErrorMwh": numeric(metrics.positive_error_mwh),
+                "negativeErrorMwh": numeric(metrics.negative_error_mwh),
+            },
+            "coverage": {
+                "expectedPeriods": len(series),
+                "matchedPeriods": len(matched),
+                "percentage": round(100 * len(matched) / len(series), 2),
+            },
+            "daily": daily_summaries(series),
+            "series": [
+                {
+                    "startTime": item.start_time,
+                    "forecastMw": numeric(item.forecast_mw),
+                    "actualMw": numeric(item.actual_mw),
+                    "errorMw": numeric(item.forecast_mw - item.actual_mw)
+                    if item.status == "matched"
+                    else None,
+                    "absoluteErrorMw": numeric(abs(item.forecast_mw - item.actual_mw))
+                    if item.status == "matched"
+                    else None,
+                    "energyErrorMwh": numeric((item.forecast_mw - item.actual_mw) * Decimal("0.5"))
+                    if item.status == "matched"
+                    else None,
+                    "forecastPublishTime": item.forecast_publish_time,
+                    "decisionCutoff": item.decision_cutoff,
+                    "status": item.status,
+                }
+                for item in series
+            ],
+            "dataAsOf": data_as_of,
+            "warnings": warnings,
+        }
+    )
 
 
-@router.get("/forecast-versions")
+@router.get("/forecast-versions", response_model=ForecastVersionsResponse)
 def forecast_versions(
-    start_time: datetime = Query(alias="startTime"),
-    decision_time: time = Query(default=time(10), alias="decisionTime"),
-    timezone: str = Query(default="Europe/London"),
-    session: Session = Depends(get_session),
-) -> dict:
+    start_time: Annotated[datetime, Query(alias="startTime")],
+    session: Annotated[Session, Depends(get_session)],
+    decision_time: Annotated[time, Query(alias="decisionTime")] = DEFAULT_DECISION_TIME,
+    timezone: Annotated[str, Query()] = "Europe/London",
+) -> ForecastVersionsResponse:
     if timezone != "Europe/London":
         raise ApiError("INVALID_TIMEZONE", "Only Europe/London is supported.", 422)
     if start_time.tzinfo is None:
         raise ApiError("INVALID_START_TIME", "startTime must include a timezone.", 422)
     versions = forecast_versions_for_start_time(session, start_time)
     cutoff = decision_cutoff_for_delivery(start_time, decision_time)
-    selected = max((version for version in versions if version.publish_time <= cutoff), key=lambda version: version.publish_time, default=None)
-    return {
-        "startTime": start_time,
-        "decisionPolicy": {"time": decision_time.strftime("%H:%M"), "timezone": timezone, "daysBeforeDelivery": 1},
-        "decisionCutoff": cutoff,
-        "versions": [
-            {
-                "publishTime": version.publish_time,
-                "generationMw": numeric(version.generation_mw),
-                "eligible": version.publish_time <= cutoff,
-                "selected": selected is not None and version.id == selected.id,
-            }
-            for version in versions
-        ],
-    }
+    selected = max(
+        (version for version in versions if version.publish_time <= cutoff),
+        key=lambda version: version.publish_time,
+        default=None,
+    )
+    return ForecastVersionsResponse.model_validate(
+        {
+            "startTime": start_time,
+            "decisionPolicy": {
+                "time": decision_time.strftime("%H:%M"),
+                "timezone": timezone,
+                "daysBeforeDelivery": 1,
+            },
+            "decisionCutoff": cutoff,
+            "versions": [
+                {
+                    "publishTime": version.publish_time,
+                    "generationMw": numeric(version.generation_mw),
+                    "eligible": version.publish_time <= cutoff,
+                    "selected": selected is not None and version.id == selected.id,
+                }
+                for version in versions
+            ],
+        }
+    )

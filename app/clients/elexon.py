@@ -14,7 +14,9 @@ class ElexonClientError(RuntimeError):
 class ElexonClient:
     def __init__(self) -> None:
         settings = get_settings()
-        self.client = httpx.Client(base_url=settings.elexon_base_url, timeout=httpx.Timeout(30.0, connect=10.0))
+        self.client = httpx.Client(
+            base_url=settings.elexon_base_url, timeout=httpx.Timeout(30.0, connect=10.0)
+        )
 
     def __enter__(self) -> "ElexonClient":
         return self
@@ -32,7 +34,9 @@ class ElexonClient:
             },
         )
 
-    def fetch_forecasts(self, published_from: datetime, published_to: datetime) -> list[dict[str, Any]]:
+    def fetch_forecasts(
+        self, published_from: datetime, published_to: datetime
+    ) -> list[dict[str, Any]]:
         return self._get(
             "/datasets/WINDFOR/stream",
             {
@@ -47,13 +51,15 @@ class ElexonClient:
             try:
                 response = self.client.get(path, params=params)
                 if response.status_code >= 500:
-                    raise httpx.HTTPStatusError("upstream server error", request=response.request, response=response)
+                    raise httpx.HTTPStatusError(
+                        "upstream server error", request=response.request, response=response
+                    )
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, list):
                     raise ElexonClientError("Elexon returned an unexpected response shape")
                 return payload
-            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+            except (httpx.NetworkError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
                 last_error = exc
                 if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
                     break

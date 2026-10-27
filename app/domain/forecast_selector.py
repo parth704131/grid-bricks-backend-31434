@@ -1,7 +1,7 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, time
 from decimal import Decimal
-from typing import Iterable
 
 from app.core.time import decision_cutoff_for_delivery, source_hour_start
 

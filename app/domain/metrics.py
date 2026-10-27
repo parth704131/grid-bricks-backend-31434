@@ -1,7 +1,7 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from math import ceil
-from typing import Iterable
 
 
 @dataclass(frozen=True)

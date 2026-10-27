@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class ImportRunStatus(str, enum.Enum):
+class ImportRunStatus(enum.StrEnum):
     RUNNING = "running"
     SUCCESSFUL = "successful"
     PARTIAL = "partial"
@@ -25,7 +25,9 @@ class DataImportRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     dataset: Mapped[str] = mapped_column(String(16), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[ImportRunStatus] = mapped_column(
         Enum(
@@ -35,7 +37,13 @@ class DataImportRun(Base):
         ),
         nullable=False,
     )
-    records_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    records_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    records_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    records_received: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    records_written: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    records_rejected: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

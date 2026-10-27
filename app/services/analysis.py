@@ -31,21 +31,27 @@ class PeriodAnalysis:
         return "matched"
 
 
-def analyse_period(session: Session, delivery_from: date, delivery_to: date, decision_time: time) -> tuple[list[PeriodAnalysis], datetime | None]:
+def analyse_period(
+    session: Session, delivery_from: date, delivery_to: date, decision_time: time
+) -> tuple[list[PeriodAnalysis], datetime | None]:
     periods = delivery_period_starts(delivery_from, delivery_to)
     if not periods:
         return [], None
     actuals = {
         row.start_time: row.generation_mw
         for row in session.scalars(
-            select(WindActual).where(WindActual.start_time >= periods[0], WindActual.start_time <= periods[-1])
+            select(WindActual).where(
+                WindActual.start_time >= periods[0], WindActual.start_time <= periods[-1]
+            )
         )
     }
     source_start = periods[0].replace(minute=0)
     source_end = periods[-1].replace(minute=0)
     forecasts = list(
         session.scalars(
-            select(WindForecast).where(WindForecast.start_time >= source_start, WindForecast.start_time <= source_end)
+            select(WindForecast).where(
+                WindForecast.start_time >= source_start, WindForecast.start_time <= source_end
+            )
         )
     )
     versions_by_start: dict[datetime, list[ForecastVersion]] = defaultdict(list)
@@ -69,7 +75,10 @@ def analyse_period(session: Session, delivery_from: date, delivery_to: date, dec
                 decision_cutoff=decision_cutoff_for_delivery(start_time, decision_time),
             )
         )
-    imports = [latest_completed_import(session, "FUELHH"), latest_completed_import(session, "WINDFOR")]
+    imports = [
+        latest_completed_import(session, "FUELHH"),
+        latest_completed_import(session, "WINDFOR"),
+    ]
     completed = [run.completed_at for run in imports if run and run.completed_at]
     return series, max(completed) if completed else None
 
@@ -85,6 +94,8 @@ def metrics_for_series(series: list[PeriodAnalysis]):
 def forecast_versions_for_start_time(session: Session, start_time: datetime) -> list[WindForecast]:
     return list(
         session.scalars(
-            select(WindForecast).where(WindForecast.start_time == start_time.astimezone(UTC)).order_by(WindForecast.publish_time)
+            select(WindForecast)
+            .where(WindForecast.start_time == start_time.astimezone(UTC))
+            .order_by(WindForecast.publish_time)
         )
     )

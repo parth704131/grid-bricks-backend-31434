@@ -1,8 +1,9 @@
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.analysis import router as analysis_router
 from app.api.health import router as health_router
@@ -41,15 +42,41 @@ async def attach_request_id(request: Request, call_next):
 
 @app.exception_handler(ApiError)
 async def api_error_handler(request: Request, error: ApiError) -> JSONResponse:
+    return _error_response(request, error.code, error.message, error.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, error: RequestValidationError) -> JSONResponse:
+    fields = {issue["loc"][-1] for issue in error.errors()}
+    if "decisionTime" in fields:
+        return _error_response(
+            request,
+            "INVALID_DECISION_TIME",
+            "decisionTime must be a valid 24-hour HH:MM value.",
+            422,
+        )
+    if "startTime" in fields:
+        return _error_response(
+            request,
+            "INVALID_START_TIME",
+            "startTime must be a valid ISO 8601 timestamp.",
+            422,
+        )
+    return _error_response(request, "INVALID_REQUEST", "The request parameters are invalid.", 422)
+
+
+def _error_response(request: Request, code: str, message: str, status_code: int) -> JSONResponse:
     return JSONResponse(
-        status_code=error.status_code,
+        status_code=status_code,
         content={
             "error": {
-                "code": error.code,
-                "message": error.message,
+                "code": code,
+                "message": message,
                 "requestId": request.state.request_id,
             }
         },
     )
+
+
 app.include_router(health_router)
 app.include_router(analysis_router)

@@ -34,7 +34,10 @@ def complete_import_run(
 def latest_completed_import(session: Session, dataset: str) -> DataImportRun | None:
     statement = (
         select(DataImportRun)
-        .where(DataImportRun.dataset == dataset, DataImportRun.status.in_([ImportRunStatus.SUCCESSFUL, ImportRunStatus.PARTIAL]))
+        .where(
+            DataImportRun.dataset == dataset,
+            DataImportRun.status.in_([ImportRunStatus.SUCCESSFUL, ImportRunStatus.PARTIAL]),
+        )
         .order_by(DataImportRun.completed_at.desc())
         .limit(1)
     )

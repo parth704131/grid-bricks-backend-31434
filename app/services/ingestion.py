@@ -28,7 +28,9 @@ class IngestionError(RuntimeError):
     pass
 
 
-def import_actuals(session: Session, delivery_from: date, delivery_to: date, client: ElexonClient) -> ImportSummary:
+def import_actuals(
+    session: Session, delivery_from: date, delivery_to: date, client: ElexonClient
+) -> ImportSummary:
     run = start_import_run(session, "FUELHH")
     session.commit()
     try:
@@ -45,12 +47,18 @@ def import_actuals(session: Session, delivery_from: date, delivery_to: date, cli
         raise IngestionError("Unable to import FUELHH data") from exc
 
 
-def import_forecasts(session: Session, delivery_from: date, delivery_to: date, client: ElexonClient) -> ImportSummary:
+def import_forecasts(
+    session: Session, delivery_from: date, delivery_to: date, client: ElexonClient
+) -> ImportSummary:
     run = start_import_run(session, "WINDFOR")
     session.commit()
     try:
-        published_from = datetime.combine(delivery_from - timedelta(days=3), time.min, tzinfo=MARKET_ZONE).astimezone(UTC)
-        published_to = datetime.combine(delivery_to + timedelta(days=1), time.max, tzinfo=MARKET_ZONE).astimezone(UTC)
+        published_from = datetime.combine(
+            delivery_from - timedelta(days=3), time.min, tzinfo=MARKET_ZONE
+        ).astimezone(UTC)
+        published_to = datetime.combine(
+            delivery_to + timedelta(days=1), time.max, tzinfo=MARKET_ZONE
+        ).astimezone(UTC)
         payload = client.fetch_forecasts(published_from, published_to)
         records, rejected = _validate_forecasts(payload, delivery_from, delivery_to)
         written, duplicates = upsert_forecasts(session, records)

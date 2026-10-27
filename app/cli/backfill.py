@@ -8,7 +8,9 @@ from app.services.ingestion import IngestionError, import_actuals, import_foreca
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Import Elexon wind actuals and forecast versions.")
+    parser = argparse.ArgumentParser(
+        description="Import Elexon wind actuals and forecast versions."
+    )
     parser.add_argument("--delivery-from", type=date.fromisoformat, required=True)
     parser.add_argument("--delivery-to", type=date.fromisoformat, required=True)
     arguments = parser.parse_args()

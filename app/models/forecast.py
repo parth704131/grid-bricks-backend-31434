@@ -19,4 +19,6 @@ class WindForecast(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     publish_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     generation_mw: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
-    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

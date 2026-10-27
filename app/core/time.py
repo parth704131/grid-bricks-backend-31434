@@ -16,7 +16,9 @@ def decision_cutoff_for_delivery(start_time: datetime, decision_time: time) -> d
 
 def delivery_period_starts(delivery_from: date, delivery_to: date) -> list[datetime]:
     start = datetime.combine(delivery_from, time.min, tzinfo=MARKET_ZONE).astimezone(UTC)
-    end = datetime.combine(delivery_to + timedelta(days=1), time.min, tzinfo=MARKET_ZONE).astimezone(UTC)
+    end = datetime.combine(
+        delivery_to + timedelta(days=1), time.min, tzinfo=MARKET_ZONE
+    ).astimezone(UTC)
     periods: list[datetime] = []
     current = start
     while current < end:

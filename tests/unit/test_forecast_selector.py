@@ -32,4 +32,6 @@ def test_hourly_forecast_is_selected_for_second_half_hour() -> None:
 def test_uk_summer_cutoff_uses_bst() -> None:
     period_start = datetime(2026, 7, 2, 10, tzinfo=UTC)
 
-    assert decision_cutoff_for_delivery(period_start, time(10)) == datetime(2026, 7, 1, 9, tzinfo=UTC)
+    assert decision_cutoff_for_delivery(period_start, time(10)) == datetime(
+        2026, 7, 1, 9, tzinfo=UTC
+    )

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 
 from app.core.database import database_is_ready
+from app.core.errors import ApiError
 
 router = APIRouter(tags=["health"])
 
@@ -15,5 +16,5 @@ def health() -> dict[str, str]:
 def readiness() -> dict[str, str]:
     """Report database readiness without exposing operational internals."""
     if not database_is_ready():
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+        raise ApiError("DATABASE_UNAVAILABLE", "Database unavailable.", 503)
     return {"status": "ready"}
