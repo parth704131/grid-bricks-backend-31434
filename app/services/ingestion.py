@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.clients.elexon import ElexonClient
 from app.models.import_run import DataImportRun, ImportRunStatus
-from app.repositories.actuals import upsert_actuals
-from app.repositories.forecasts import upsert_forecasts
+from app.repositories.generation_actuals import upsert_generation_actuals
+from app.repositories.generation_forecasts import upsert_generation_forecasts
 from app.repositories.import_runs import complete_import_run, start_import_run
 from app.schemas.elexon import FuelHalfHourlyRecord, WindForecastRecord
 
@@ -36,7 +36,7 @@ def import_actuals(
     try:
         payload = client.fetch_actuals(delivery_from, delivery_to)
         records, rejected = _validate_actuals(payload)
-        written, duplicates = upsert_actuals(session, records)
+        written, duplicates = upsert_generation_actuals(session, records)
         status = ImportRunStatus.PARTIAL if rejected else ImportRunStatus.SUCCESSFUL
         complete_import_run(session, run, status, len(payload), written, rejected)
         session.commit()
@@ -61,7 +61,7 @@ def import_forecasts(
         ).astimezone(UTC)
         payload = client.fetch_forecasts(published_from, published_to)
         records, rejected = _validate_forecasts(payload, delivery_from, delivery_to)
-        written, duplicates = upsert_forecasts(session, records)
+        written, duplicates = upsert_generation_forecasts(session, records)
         status = ImportRunStatus.PARTIAL if rejected else ImportRunStatus.SUCCESSFUL
         complete_import_run(session, run, status, len(payload), written, rejected)
         session.commit()

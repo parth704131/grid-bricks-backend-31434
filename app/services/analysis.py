@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.time import decision_cutoff_for_delivery, delivery_period_starts, source_hour_start
 from app.domain.forecast_selector import ForecastVersion, select_latest_available_forecast
 from app.domain.metrics import MatchedValues, calculate_metrics
-from app.models.actual import WindActual
-from app.models.forecast import WindForecast
+from app.models.generation_actual import GenerationActual
+from app.models.generation_forecast import GenerationForecast
 from app.repositories.import_runs import latest_completed_import
 
 
@@ -40,8 +40,10 @@ def analyse_period(
     actuals = {
         row.start_time: row.generation_mw
         for row in session.scalars(
-            select(WindActual).where(
-                WindActual.start_time >= periods[0], WindActual.start_time <= periods[-1]
+            select(GenerationActual).where(
+                GenerationActual.fuel_type == "WIND",
+                GenerationActual.start_time >= periods[0],
+                GenerationActual.start_time <= periods[-1],
             )
         )
     }
@@ -49,8 +51,10 @@ def analyse_period(
     source_end = periods[-1].replace(minute=0)
     forecasts = list(
         session.scalars(
-            select(WindForecast).where(
-                WindForecast.start_time >= source_start, WindForecast.start_time <= source_end
+            select(GenerationForecast).where(
+                GenerationForecast.fuel_type == "WIND",
+                GenerationForecast.start_time >= source_start,
+                GenerationForecast.start_time <= source_end,
             )
         )
     )
@@ -91,11 +95,16 @@ def metrics_for_series(series: list[PeriodAnalysis]):
     )
 
 
-def forecast_versions_for_start_time(session: Session, start_time: datetime) -> list[WindForecast]:
+def forecast_versions_for_start_time(
+    session: Session, start_time: datetime
+) -> list[GenerationForecast]:
     return list(
         session.scalars(
-            select(WindForecast)
-            .where(WindForecast.start_time == start_time.astimezone(UTC))
-            .order_by(WindForecast.publish_time)
+            select(GenerationForecast)
+            .where(
+                GenerationForecast.fuel_type == "WIND",
+                GenerationForecast.start_time == start_time.astimezone(UTC),
+            )
+            .order_by(GenerationForecast.publish_time)
         )
     )

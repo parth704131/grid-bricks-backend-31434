@@ -4,7 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0002_create_data_import_runs"
-down_revision = "0001_create_wind_data_tables"
+down_revision = "0001_create_generation_tables"
 branch_labels = None
 depends_on = None
 

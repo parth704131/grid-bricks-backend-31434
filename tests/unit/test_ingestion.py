@@ -91,7 +91,7 @@ def test_actual_import_records_partial_run_and_duplicate_count(monkeypatch) -> N
         ]
     )
     monkeypatch.setattr("app.services.ingestion.start_import_run", lambda *_: run)
-    monkeypatch.setattr("app.services.ingestion.upsert_actuals", lambda *_: (0, 1))
+    monkeypatch.setattr("app.services.ingestion.upsert_generation_actuals", lambda *_: (0, 1))
     monkeypatch.setattr(
         "app.services.ingestion.complete_import_run", lambda *arguments: completed.append(arguments)
     )

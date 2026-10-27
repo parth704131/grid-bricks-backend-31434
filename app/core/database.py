@@ -26,7 +26,7 @@ def get_session() -> Generator[Session, None, None]:
 
 def database_is_ready() -> bool:
     """Return whether PostgreSQL can be reached and required tables exist."""
-    required_tables = {"wind_actuals", "wind_forecasts", "data_import_runs"}
+    required_tables = {"generation_actuals", "generation_forecasts", "data_import_runs"}
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

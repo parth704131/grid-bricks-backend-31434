@@ -73,6 +73,10 @@ and skips invalid records without replacing them with zero. Network timeouts and
 5xx responses are retried twice with exponential backoff; existing imported data remains
 available if a refresh fails.
 
+The persistence model uses generic generation tables with a `fuel_type` key, so it can
+support additional generation sources later. This MVP intentionally imports and analyses
+only `WIND`, as required by the assignment.
+
 Elexon's WINDFOR dataset publishes hourly forecasts while FUELHH actuals are half-hourly.
 For this MVP, the selected hourly forecast is applied to each of its two half-hour delivery
 periods. The source forecast versions themselves are stored unchanged for auditability.
