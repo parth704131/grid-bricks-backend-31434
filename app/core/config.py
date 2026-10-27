@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     elexon_base_url: str = "https://data.elexon.co.uk/bmrs/api/v1"
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgres://")
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgresql://")
+        return value
+
     @field_validator("default_decision_time")
     @classmethod
     def validate_decision_time(cls, value: str) -> str:
