@@ -32,14 +32,15 @@ Elexon FUELHH + WINDFOR -> backfill CLI -> PostgreSQL -> FastAPI -> React dashbo
 
 - Persist all instants in UTC with timezone information.
 - Use `Europe/London` only for delivery-date and day-ahead cutoff calculations.
-- `wind_actuals.start_time` is the primary key.
-- Forecast versions are immutable by `(start_time, publish_time)`; refreshes are idempotent.
+- `generation_actuals` is keyed by `(start_time, fuel_type)`.
+- Forecast versions are immutable by `(start_time, publish_time, fuel_type)`; refreshes are idempotent.
+- The persistence model is fuel-aware, but the MVP ingestion and analysis flows explicitly filter to `WIND`.
 - Missing values remain missing. Analysis labels periods as `matched`, `missing_forecast`, or `missing_actual`.
 - Error is always `forecast - actual`; positive values signify overforecasting.
 
-## Planned schema migrations
+## Schema migrations
 
-1. `0001_create_wind_data_tables` creates `wind_actuals` and `wind_forecasts`, including the forecast selection index.
+1. `0001_create_generation_data_tables` creates generic generation actual and forecast tables, including the forecast selection index.
 2. `0002_create_data_import_runs` creates operational import diagnostics.
 
 ## Operational decisions
@@ -47,8 +48,11 @@ Elexon FUELHH + WINDFOR -> backfill CLI -> PostgreSQL -> FastAPI -> React dashbo
 - The default cutoff is 10:00 Europe/London on the preceding calendar day; every response displays the policy used.
 - Historical GET endpoints send CDN-safe cache headers and include `dataAsOf` based on the latest usable import.
 - Upstream network failures are retried only when transient. Failed refreshes never remove existing records.
-- `/health` checks process liveness; `/health/ready` will check PostgreSQL and required tables.
+- `/health` checks process liveness; `/health/ready` checks PostgreSQL and required tables.
 
-## Initial project scope
+## Forecast resolution policy
 
-This initial commit establishes the application shell, configuration, testing, container, and deployment foundations. Database models, migrations, ingestion, selection, metrics, and analysis routes are implemented in the feature phases that follow.
+WINDFOR publishes forecasts at hourly resolution, while FUELHH actuals are half-hourly.
+The database preserves WINDFOR source records exactly as published. At analysis time, the
+selected forecast for an hour applies to both half-hour periods in that hour. This keeps
+source fidelity while making every FUELHH period comparable for the assignment dashboard.
