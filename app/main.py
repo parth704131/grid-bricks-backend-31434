@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.analysis import router as analysis_router
 from app.api.health import router as health_router
@@ -63,6 +64,11 @@ async def validation_error_handler(request: Request, error: RequestValidationErr
             422,
         )
     return _error_response(request, "INVALID_REQUEST", "The request parameters are invalid.", 422)
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error_handler(request: Request, error: SQLAlchemyError) -> JSONResponse:
+    return _error_response(request, "DATABASE_UNAVAILABLE", "Database unavailable.", 503)
 
 
 def _error_response(request: Request, code: str, message: str, status_code: int) -> JSONResponse:

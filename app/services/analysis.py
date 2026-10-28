@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -35,6 +35,29 @@ def analyse_period(
     session: Session, delivery_from: date, delivery_to: date, decision_time: time
 ) -> tuple[list[PeriodAnalysis], datetime | None]:
     periods = delivery_period_starts(delivery_from, delivery_to)
+    return _analyse_periods(session, periods, decision_time)
+
+
+def analyse_period_page(
+    session: Session,
+    delivery_from: date,
+    delivery_to: date,
+    decision_time: time,
+    page: int,
+    page_size: int,
+) -> tuple[list[PeriodAnalysis], datetime | None, int]:
+    all_periods = delivery_period_starts(delivery_from, delivery_to)
+    total_items = len(all_periods)
+    start = (page - 1) * page_size
+    page_series, data_as_of = _analyse_periods(
+        session, all_periods[start : start + page_size], decision_time
+    )
+    return page_series, data_as_of, total_items
+
+
+def _analyse_periods(
+    session: Session, periods: list[datetime], decision_time: time
+) -> tuple[list[PeriodAnalysis], datetime | None]:
     if not periods:
         return [], None
     actuals = {
@@ -98,12 +121,13 @@ def metrics_for_series(series: list[PeriodAnalysis]):
 def forecast_versions_for_start_time(
     session: Session, start_time: datetime
 ) -> list[GenerationForecast]:
+    source_start_time = source_hour_start(start_time)
     return list(
         session.scalars(
             select(GenerationForecast)
             .where(
                 GenerationForecast.fuel_type == "WIND",
-                GenerationForecast.start_time == start_time.astimezone(UTC),
+                GenerationForecast.start_time == source_start_time,
             )
             .order_by(GenerationForecast.publish_time)
         )

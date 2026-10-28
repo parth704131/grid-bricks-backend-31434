@@ -58,6 +58,7 @@ All analysis responses are calculated from PostgreSQL; dashboard requests never 
 - `GET /health`
 - `GET /health/ready`
 - `GET /api/v1/analysis?from=2026-01-01&to=2026-01-31&decisionTime=10:00`
+- `GET /api/v1/analysis/periods?from=2026-01-01&to=2026-01-31&decisionTime=10:00&page=1&pageSize=20`
 - `GET /api/v1/forecast-versions?startTime=2026-01-01T10:00:00Z&decisionTime=10:00`
 
 The MVP accepts only the January 2026 delivery range. `decisionTime` is optional and
@@ -65,11 +66,15 @@ uses `DEFAULT_DECISION_TIME` when omitted. Analysis requests return partial data
 coverage and warnings when source periods are missing. Public errors use a safe,
 request-ID-bearing error envelope.
 
+The paginated periods endpoint defaults to 20 rows per page and accepts a maximum of
+100 rows. It is intended for the detailed dashboard table; the analysis endpoint remains
+the source for complete chart series and aggregate metrics.
+
 ## Import behaviour
 
 The backfill command is idempotent. It validates each source record, ignores non-WIND
 FUELHH rows, keeps all valid WINDFOR versions, records an import run for each dataset,
-and skips invalid records without replacing them with zero. Network timeouts and Elexon
+deduplicates repeated source keys before bulk upsert, and skips invalid records without replacing them with zero. Network timeouts and Elexon
 5xx responses are retried twice with exponential backoff; existing imported data remains
 available if a refresh fails.
 

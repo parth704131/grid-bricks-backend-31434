@@ -3,9 +3,15 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.database import get_session
 from app.main import app
 from app.services.analysis import PeriodAnalysis
+
+
+def fake_session():
+    yield object()
 
 
 def test_analysis_returns_dashboard_response(monkeypatch) -> None:
@@ -46,6 +52,22 @@ def test_analysis_invalid_decision_time_uses_standard_error() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_DECISION_TIME"
+
+
+def test_analysis_database_failure_uses_safe_database_error(monkeypatch) -> None:
+    def fail_analysis(*_):
+        raise SQLAlchemyError("connection failed")
+
+    monkeypatch.setattr("app.api.analysis.analyse_period", fail_analysis)
+    app.dependency_overrides[get_session] = fake_session
+    try:
+        response = TestClient(app).get("/api/v1/analysis?from=2026-01-01&to=2026-01-01")
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
+    assert "connection failed" not in response.text
 
 
 def test_readiness_returns_safe_database_error(monkeypatch) -> None:
@@ -91,3 +113,92 @@ def test_forecast_versions_marks_latest_eligible_version(monkeypatch) -> None:
             "selected": False,
         },
     ]
+
+
+def test_analysis_periods_defaults_to_twenty_items(monkeypatch) -> None:
+    periods = [
+        PeriodAnalysis(
+            start_time=datetime(2026, 1, 1, tzinfo=UTC),
+            forecast_mw=Decimal("110"),
+            actual_mw=Decimal("100"),
+            forecast_publish_time=datetime(2025, 12, 31, 9, 30, tzinfo=UTC),
+            decision_cutoff=datetime(2025, 12, 31, 10, tzinfo=UTC),
+        )
+        for _ in range(45)
+    ]
+    monkeypatch.setattr(
+        "app.api.analysis.analyse_period_page",
+        lambda *_: (periods[:20], datetime(2026, 2, 1, tzinfo=UTC), 45),
+    )
+    app.dependency_overrides[get_session] = fake_session
+    try:
+        response = TestClient(app).get("/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01")
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 200
+    assert len(response.json()["series"]) == 20
+    assert response.json()["pagination"] == {
+        "page": 1,
+        "pageSize": 20,
+        "totalItems": 45,
+        "totalPages": 3,
+    }
+
+
+def test_analysis_periods_supports_custom_page_size_and_page(monkeypatch) -> None:
+    periods = [
+        PeriodAnalysis(
+            start_time=datetime(2026, 1, 1, tzinfo=UTC),
+            forecast_mw=Decimal(str(index)),
+            actual_mw=Decimal(str(index - 1)),
+            forecast_publish_time=datetime(2025, 12, 31, 9, 30, tzinfo=UTC),
+            decision_cutoff=datetime(2025, 12, 31, 10, tzinfo=UTC),
+        )
+        for index in range(1, 46)
+    ]
+    monkeypatch.setattr(
+        "app.api.analysis.analyse_period_page",
+        lambda *_: (periods[10:20], datetime(2026, 2, 1, tzinfo=UTC), 45),
+    )
+    app.dependency_overrides[get_session] = fake_session
+    try:
+        response = TestClient(app).get(
+            "/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01&page=2&pageSize=10"
+        )
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 200
+    assert len(response.json()["series"]) == 10
+    assert response.json()["pagination"]["page"] == 2
+    assert response.json()["series"][0]["forecastMw"] == 11.0
+
+
+def test_analysis_periods_rejects_page_outside_range(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.analysis.analyse_period_page",
+        lambda *_: (
+            [
+                PeriodAnalysis(
+                    start_time=datetime(2026, 1, 1, tzinfo=UTC),
+                    forecast_mw=Decimal("110"),
+                    actual_mw=Decimal("100"),
+                    forecast_publish_time=datetime(2025, 12, 31, 9, 30, tzinfo=UTC),
+                    decision_cutoff=datetime(2025, 12, 31, 10, tzinfo=UTC),
+                )
+            ],
+            datetime(2026, 2, 1, tzinfo=UTC),
+            1,
+        ),
+    )
+    app.dependency_overrides[get_session] = fake_session
+    try:
+        response = TestClient(app).get(
+            "/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01&page=4&pageSize=20"
+        )
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_PAGE"

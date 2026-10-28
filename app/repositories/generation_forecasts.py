@@ -13,6 +13,15 @@ def upsert_generation_forecasts(
 ) -> tuple[int, int]:
     if not records:
         return 0, 0
+    unique_records: dict[tuple[datetime, datetime, str], WindForecastRecord] = {}
+    for record in records:
+        key = (
+            record.start_time.astimezone(UTC),
+            record.publish_time.astimezone(UTC),
+            "WIND",
+        )
+        unique_records[key] = record
+    incoming_duplicates = len(records) - len(unique_records)
     values = [
         {
             "start_time": record.start_time.astimezone(UTC),
@@ -21,9 +30,9 @@ def upsert_generation_forecasts(
             "generation_mw": record.generation,
             "ingested_at": datetime.now(UTC),
         }
-        for record in records
+        for record in unique_records.values()
     ]
-    duplicates = 0
+    existing_duplicates = 0
     for batch_start in range(0, len(values), 1_000):
         batch = values[batch_start : batch_start + 1_000]
         keys = [(value["start_time"], value["publish_time"], value["fuel_type"]) for value in batch]
@@ -40,7 +49,7 @@ def upsert_generation_forecasts(
                 ).in_(keys)
             )
         ).all()
-        duplicates += len(existing)
+        existing_duplicates += len(existing)
         statement = insert(GenerationForecast).values(batch)
         statement = statement.on_conflict_do_update(
             constraint="uq_generation_forecasts_start_publish_fuel",
@@ -50,4 +59,4 @@ def upsert_generation_forecasts(
             },
         )
         session.execute(statement)
-    return len(values) - duplicates, duplicates
+    return len(values) - existing_duplicates, incoming_duplicates + existing_duplicates

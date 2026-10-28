@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import ApiError
-from app.core.time import MARKET_ZONE, decision_cutoff_for_delivery
-from app.schemas.analysis import AnalysisResponse, ForecastVersionsResponse
+from app.core.time import MARKET_ZONE, decision_cutoff_for_delivery, delivery_period_starts
+from app.schemas.analysis import AnalysisPeriodsResponse, AnalysisResponse, ForecastVersionsResponse
 from app.services.analysis import (
     analyse_period,
+    analyse_period_page,
     forecast_versions_for_start_time,
     metrics_for_series,
 )
@@ -45,6 +46,33 @@ def daily_summaries(series: list) -> list[dict]:
     return summaries
 
 
+def series_period_payload(item) -> dict:
+    return {
+        "startTime": item.start_time,
+        "forecastMw": numeric(item.forecast_mw),
+        "actualMw": numeric(item.actual_mw),
+        "errorMw": numeric(item.forecast_mw - item.actual_mw) if item.status == "matched" else None,
+        "absoluteErrorMw": numeric(abs(item.forecast_mw - item.actual_mw))
+        if item.status == "matched"
+        else None,
+        "energyErrorMwh": numeric((item.forecast_mw - item.actual_mw) * Decimal("0.5"))
+        if item.status == "matched"
+        else None,
+        "forecastPublishTime": item.forecast_publish_time,
+        "decisionCutoff": item.decision_cutoff,
+        "status": item.status,
+    }
+
+
+def validate_analysis_request(from_date: date, to_date: date, timezone: str) -> None:
+    if from_date > to_date:
+        raise ApiError("INVALID_DATE_RANGE", "The start date must not be after the end date.", 422)
+    if timezone != "Europe/London":
+        raise ApiError("INVALID_TIMEZONE", "Only Europe/London is supported.", 422)
+    if from_date < date(2026, 1, 1) or to_date > date(2026, 1, 31):
+        raise ApiError("UNSUPPORTED_DATE_RANGE", "Only January 2026 is supported.", 422)
+
+
 @router.get("/analysis", response_model=AnalysisResponse)
 def analysis(
     response: Response,
@@ -54,12 +82,7 @@ def analysis(
     decision_time: Annotated[time, Query(alias="decisionTime")] = DEFAULT_DECISION_TIME,
     timezone: Annotated[str, Query()] = "Europe/London",
 ) -> AnalysisResponse:
-    if from_date > to_date:
-        raise ApiError("INVALID_DATE_RANGE", "The start date must not be after the end date.", 422)
-    if timezone != "Europe/London":
-        raise ApiError("INVALID_TIMEZONE", "Only Europe/London is supported.", 422)
-    if from_date < date(2026, 1, 1) or to_date > date(2026, 1, 31):
-        raise ApiError("UNSUPPORTED_DATE_RANGE", "Only January 2026 is supported.", 422)
+    validate_analysis_request(from_date, to_date, timezone)
     series, data_as_of = analyse_period(session, from_date, to_date, decision_time)
     if not data_as_of:
         raise ApiError("NO_DATA_AVAILABLE", "No data is available for this request.", 404)
@@ -93,28 +116,53 @@ def analysis(
                 "percentage": round(100 * len(matched) / len(series), 2),
             },
             "daily": daily_summaries(series),
-            "series": [
-                {
-                    "startTime": item.start_time,
-                    "forecastMw": numeric(item.forecast_mw),
-                    "actualMw": numeric(item.actual_mw),
-                    "errorMw": numeric(item.forecast_mw - item.actual_mw)
-                    if item.status == "matched"
-                    else None,
-                    "absoluteErrorMw": numeric(abs(item.forecast_mw - item.actual_mw))
-                    if item.status == "matched"
-                    else None,
-                    "energyErrorMwh": numeric((item.forecast_mw - item.actual_mw) * Decimal("0.5"))
-                    if item.status == "matched"
-                    else None,
-                    "forecastPublishTime": item.forecast_publish_time,
-                    "decisionCutoff": item.decision_cutoff,
-                    "status": item.status,
-                }
-                for item in series
-            ],
+            "series": [series_period_payload(item) for item in series],
             "dataAsOf": data_as_of,
             "warnings": warnings,
+        }
+    )
+
+
+@router.get("/analysis/periods", response_model=AnalysisPeriodsResponse)
+def analysis_periods(
+    response: Response,
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    session: Annotated[Session, Depends(get_session)],
+    decision_time: Annotated[time, Query(alias="decisionTime")] = DEFAULT_DECISION_TIME,
+    timezone: Annotated[str, Query()] = "Europe/London",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+) -> AnalysisPeriodsResponse:
+    validate_analysis_request(from_date, to_date, timezone)
+    all_periods = delivery_period_starts(from_date, to_date)
+    total_items = len(all_periods)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    if page > total_pages:
+        raise ApiError("INVALID_PAGE", "The requested page is outside the available range.", 422)
+    series, data_as_of, total_items = analyse_period_page(
+        session, from_date, to_date, decision_time, page, page_size
+    )
+    if not data_as_of:
+        raise ApiError("NO_DATA_AVAILABLE", "No data is available for this request.", 404)
+    page_items = series
+    response.headers["Cache-Control"] = "public, s-maxage=3600, stale-while-revalidate=86400"
+    return AnalysisPeriodsResponse.model_validate(
+        {
+            "period": {"from": from_date, "to": to_date},
+            "decisionPolicy": {
+                "time": decision_time.strftime("%H:%M"),
+                "timezone": timezone,
+                "daysBeforeDelivery": 1,
+            },
+            "series": [series_period_payload(item) for item in page_items],
+            "pagination": {
+                "page": page,
+                "pageSize": page_size,
+                "totalItems": total_items,
+                "totalPages": total_pages,
+            },
+            "dataAsOf": data_as_of,
         }
     )
 

@@ -65,6 +65,21 @@ class AnalysisResponse(ApiSchema):
     warnings: list[str]
 
 
+class Pagination(ApiSchema):
+    page: int
+    page_size: int = Field(alias="pageSize")
+    total_items: int = Field(alias="totalItems")
+    total_pages: int = Field(alias="totalPages")
+
+
+class AnalysisPeriodsResponse(ApiSchema):
+    period: Period
+    decision_policy: DecisionPolicy = Field(alias="decisionPolicy")
+    series: list[SeriesPeriod]
+    pagination: Pagination
+    data_as_of: datetime = Field(alias="dataAsOf")
+
+
 class ForecastVersion(ApiSchema):
     publish_time: datetime = Field(alias="publishTime")
     generation_mw: float = Field(alias="generationMw")
