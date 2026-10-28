@@ -13,6 +13,11 @@ def upsert_generation_actuals(
 ) -> tuple[int, int]:
     if not records:
         return 0, 0
+    unique_records: dict[tuple[datetime, str], FuelHalfHourlyRecord] = {}
+    for record in records:
+        key = (record.start_time.astimezone(UTC), record.fuel_type)
+        unique_records[key] = record
+    incoming_duplicates = len(records) - len(unique_records)
     values = [
         {
             "start_time": record.start_time.astimezone(UTC),
@@ -20,7 +25,7 @@ def upsert_generation_actuals(
             "generation_mw": record.generation,
             "ingested_at": datetime.now(UTC),
         }
-        for record in records
+        for record in unique_records.values()
     ]
     existing_keys = set(
         session.execute(
@@ -40,5 +45,5 @@ def upsert_generation_actuals(
         },
     )
     session.execute(statement)
-    duplicates = len(existing_keys)
-    return len(values) - duplicates, duplicates
+    existing_duplicates = len(existing_keys)
+    return len(values) - existing_duplicates, incoming_duplicates + existing_duplicates

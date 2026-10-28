@@ -3,6 +3,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.database import get_session
 from app.main import app
@@ -51,6 +52,22 @@ def test_analysis_invalid_decision_time_uses_standard_error() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_DECISION_TIME"
+
+
+def test_analysis_database_failure_uses_safe_database_error(monkeypatch) -> None:
+    def fail_analysis(*_):
+        raise SQLAlchemyError("connection failed")
+
+    monkeypatch.setattr("app.api.analysis.analyse_period", fail_analysis)
+    app.dependency_overrides[get_session] = fake_session
+    try:
+        response = TestClient(app).get("/api/v1/analysis?from=2026-01-01&to=2026-01-01")
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
+    assert "connection failed" not in response.text
 
 
 def test_readiness_returns_safe_database_error(monkeypatch) -> None:
@@ -110,14 +127,12 @@ def test_analysis_periods_defaults_to_twenty_items(monkeypatch) -> None:
         for _ in range(45)
     ]
     monkeypatch.setattr(
-        "app.api.analysis.analyse_period",
-        lambda *_: (periods, datetime(2026, 2, 1, tzinfo=UTC)),
+        "app.api.analysis.analyse_period_page",
+        lambda *_: (periods[:20], datetime(2026, 2, 1, tzinfo=UTC), 45),
     )
     app.dependency_overrides[get_session] = fake_session
     try:
-        response = TestClient(app).get(
-            "/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01"
-        )
+        response = TestClient(app).get("/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01")
     finally:
         app.dependency_overrides.pop(get_session, None)
 
@@ -143,8 +158,8 @@ def test_analysis_periods_supports_custom_page_size_and_page(monkeypatch) -> Non
         for index in range(1, 46)
     ]
     monkeypatch.setattr(
-        "app.api.analysis.analyse_period",
-        lambda *_: (periods, datetime(2026, 2, 1, tzinfo=UTC)),
+        "app.api.analysis.analyse_period_page",
+        lambda *_: (periods[10:20], datetime(2026, 2, 1, tzinfo=UTC), 45),
     )
     app.dependency_overrides[get_session] = fake_session
     try:
@@ -162,7 +177,7 @@ def test_analysis_periods_supports_custom_page_size_and_page(monkeypatch) -> Non
 
 def test_analysis_periods_rejects_page_outside_range(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.api.analysis.analyse_period",
+        "app.api.analysis.analyse_period_page",
         lambda *_: (
             [
                 PeriodAnalysis(
@@ -174,12 +189,13 @@ def test_analysis_periods_rejects_page_outside_range(monkeypatch) -> None:
                 )
             ],
             datetime(2026, 2, 1, tzinfo=UTC),
+            1,
         ),
     )
     app.dependency_overrides[get_session] = fake_session
     try:
         response = TestClient(app).get(
-            "/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01&page=2&pageSize=20"
+            "/api/v1/analysis/periods?from=2026-01-01&to=2026-01-01&page=4&pageSize=20"
         )
     finally:
         app.dependency_overrides.pop(get_session, None)

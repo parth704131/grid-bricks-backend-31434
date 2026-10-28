@@ -74,7 +74,7 @@ the source for complete chart series and aggregate metrics.
 
 The backfill command is idempotent. It validates each source record, ignores non-WIND
 FUELHH rows, keeps all valid WINDFOR versions, records an import run for each dataset,
-and skips invalid records without replacing them with zero. Network timeouts and Elexon
+deduplicates repeated source keys before bulk upsert, and skips invalid records without replacing them with zero. Network timeouts and Elexon
 5xx responses are retried twice with exponential backoff; existing imported data remains
 available if a refresh fails.
 

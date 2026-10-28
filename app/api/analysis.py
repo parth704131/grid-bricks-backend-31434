@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import ApiError
-from app.core.time import MARKET_ZONE, decision_cutoff_for_delivery
+from app.core.time import MARKET_ZONE, decision_cutoff_for_delivery, delivery_period_starts
 from app.schemas.analysis import AnalysisPeriodsResponse, AnalysisResponse, ForecastVersionsResponse
 from app.services.analysis import (
     analyse_period,
+    analyse_period_page,
     forecast_versions_for_start_time,
     metrics_for_series,
 )
@@ -50,9 +51,7 @@ def series_period_payload(item) -> dict:
         "startTime": item.start_time,
         "forecastMw": numeric(item.forecast_mw),
         "actualMw": numeric(item.actual_mw),
-        "errorMw": numeric(item.forecast_mw - item.actual_mw)
-        if item.status == "matched"
-        else None,
+        "errorMw": numeric(item.forecast_mw - item.actual_mw) if item.status == "matched" else None,
         "absoluteErrorMw": numeric(abs(item.forecast_mw - item.actual_mw))
         if item.status == "matched"
         else None,
@@ -136,15 +135,17 @@ def analysis_periods(
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
 ) -> AnalysisPeriodsResponse:
     validate_analysis_request(from_date, to_date, timezone)
-    series, data_as_of = analyse_period(session, from_date, to_date, decision_time)
-    if not data_as_of:
-        raise ApiError("NO_DATA_AVAILABLE", "No data is available for this request.", 404)
-    total_items = len(series)
+    all_periods = delivery_period_starts(from_date, to_date)
+    total_items = len(all_periods)
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     if page > total_pages:
         raise ApiError("INVALID_PAGE", "The requested page is outside the available range.", 422)
-    start = (page - 1) * page_size
-    page_items = series[start : start + page_size]
+    series, data_as_of, total_items = analyse_period_page(
+        session, from_date, to_date, decision_time, page, page_size
+    )
+    if not data_as_of:
+        raise ApiError("NO_DATA_AVAILABLE", "No data is available for this request.", 404)
+    page_items = series
     response.headers["Cache-Control"] = "public, s-maxage=3600, stale-while-revalidate=86400"
     return AnalysisPeriodsResponse.model_validate(
         {
